@@ -531,7 +531,9 @@ class SmartContracts {
             },
           }),
           inUse: true,
-          _context: {},
+          _context: {
+            api: {},
+          },
         };
         JSVMs.push(vm);
       }
