@@ -529,11 +529,12 @@ class SmartContracts {
             timeout: jsVMTimeout,
             sandbox: {
             },
+            _context: {
+              api: {},
+            },
           }),
           inUse: true,
-          _context: {
-            api: {},
-          },
+
         };
         JSVMs.push(vm);
       }
