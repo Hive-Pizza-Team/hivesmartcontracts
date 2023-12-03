@@ -58,6 +58,25 @@ Restore state
 `mongorestore --gzip --archive=hsc_50287280.archive`
 
 Edit config.json to match block number of backup.
+
+### Set up Hive Smart Contracts
+
+#### First time start up
+
+- set configuration in `.env` and `config.json`
+- `docker compose build`
+- `docker compose up -d mongo initimongo`
+- `RESTORE_PARTIAL=1 docker compose up -d he`
+- - set RESTORE_PARTIAL environment variable to restore the database from a snapshot. You do not want to do this every time the node starts or re-starts, since it can take 2 hours+ to complete the restore.
+
+#### Normal start up
+
+- `docker compose up -d`
+
+#### Monitor hivesmartcontracts app logs
+
+- `docker compose logs -f --tail=100 he`
+
 ## 5. Tests
 * npm run test
 

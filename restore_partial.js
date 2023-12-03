@@ -197,10 +197,11 @@ async function updateConfigJson(newStartBlock) {
  * @param archiveName to use for restoring.
  */
 async function execMongorestore(archiveName) {
-  console.log(`starting restore using 'mongorestore --quiet --gzip --archive=${archiveName}'`);
+  const mongorestoreCommand = `mongorestore ${drop ? '' : '--quiet'} --gzip --archive=${archiveName} ${conf.databaseURL}`
+  console.log(`starting restore using '${mongorestoreCommand}`);
   console.log('this will take 30 to 60 minutes without any log output...');
 
-  exec(`mongorestore${drop ? '' : ' --quiet'} --gzip --archive=${archiveName}`, (error, stdout, stderr) => {
+  exec(mongorestoreCommand, (error, stdout, stderr) => {
     if (error) {
       console.log('failed to restore');
       console.log(`error: ${error.message}`);
