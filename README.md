@@ -49,7 +49,7 @@ pm2 start app.js --no-treekill --kill-timeout 10000 --no-autorestart
 
 ### DB Backup and Restore
 
-Backup current state (track current hive blpck in config)
+Backup current state (track current hive block in config)
 
 `mongodump -d=hsc --gzip --archive=hsc_50287280.archive`
 
@@ -59,7 +59,7 @@ Restore state
 
 Edit config.json to match block number of backup.
 
-### Set up Hive Smart Contracts
+### Set up Hive Smart Contracts Docker Cluster
 
 #### First time start up
 
