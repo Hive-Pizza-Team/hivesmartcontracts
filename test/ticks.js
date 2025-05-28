@@ -37,7 +37,7 @@ async function getTickingActionsAtRefblock(refBlockNumber) {
 }
 
 describe('ticks', function () {
-  this.timeout(60000);
+  this.timeout(10000);
 
   before((done) => {
     new Promise(async (resolve) => {
@@ -74,6 +74,7 @@ describe('ticks', function () {
   afterEach((done) => {
       // runs after each test in this block
       new Promise(async (resolve) => {
+        fixture.tearDown();
         await db.dropDatabase()
         resolve();
       })

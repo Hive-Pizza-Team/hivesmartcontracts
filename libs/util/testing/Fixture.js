@@ -2,6 +2,9 @@
 const { fork } = require('child_process');
 const { Database } = require('../../Database');
 const blockchain = require('../../../plugins/Blockchain');
+const { setupContractPayload } = require('../contractUtil');
+const { CONSTANTS } = require('../../Constants');
+const { Transaction } = require('../../Transaction');
 
 const conf = {
   chainId: 'test-chain-id',
@@ -13,6 +16,8 @@ const conf = {
   databaseURL: 'mongodb://localhost:27017',
   databaseName: 'testssc',
   streamNodes: ['https://api.hive.blog'],
+  enablePerUserTxLimit: false,
+  defaultLogLevel: "warn",
 };
 
 class Fixture {
@@ -23,6 +28,7 @@ class Fixture {
     this.database = null;
     this.txId = 1;
     this.refBlockNumber = 100000000;
+    this.startBlockOffset = 0;
   }
 
   sendBlock(block) {
@@ -89,8 +95,10 @@ class Fixture {
   }
 
   unloadPlugin(plugin) {
-    this.plugins[plugin.PLUGIN_NAME].cp.kill('SIGINT');
-    this.plugins[plugin.PLUGIN_NAME] = null;
+    if (this.plugins[plugin.PLUGIN_NAME]) {
+      this.plugins[plugin.PLUGIN_NAME].cp.kill('SIGINT');
+      this.plugins[plugin.PLUGIN_NAME] = null;
+    }
   }
 
   getNextTxId() {
@@ -109,6 +117,21 @@ class Fixture {
     await this.database.init(conf.databaseURL, conf.databaseName);
     this.refBlockNumber = 100000000;
     this.txId = 1;
+
+    // set up resource manager
+    const rmContractPayload = setupContractPayload('resourcemanager', './contracts/resourcemanager.js');
+    const transactions = [];
+    transactions.push(new Transaction(undefined, this.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(rmContractPayload)));
+    transactions.push(new Transaction(undefined, this.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'resourcemanager', 'updateParams', '{ "numberOfFreeTx": 10000 }'));
+    const block = {
+       refHiveBlockNumber: 10,
+       refHiveBlockId: 'ABCD1',
+       prevRefHiveBlockId: 'ABCD2',
+       timestamp: '2018-01-01T00:00:00',
+       transactions,
+     };
+     await this.sendBlock(block);
+     this.startBlockOffset = 1;
   }
 
   tearDown() {

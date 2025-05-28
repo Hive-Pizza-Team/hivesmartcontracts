@@ -84,7 +84,7 @@ async function assertNFTInstances(account, ownedBy, nftIds, symbol) {
 }
 
 describe('NFT Auction Smart Contract', function () {
-  this.timeout(20000);
+  this.timeout(10000);
 
   before((done) => {
     new Promise(async (resolve) => {
@@ -122,6 +122,7 @@ describe('NFT Auction Smart Contract', function () {
   afterEach((done) => {
     // runs after each test in this block
     new Promise(async (resolve) => {
+      fixture.tearDown();
       await db.dropDatabase();
       resolve();
     })
@@ -178,7 +179,7 @@ describe('NFT Auction Smart Contract', function () {
       assert.equal(params.length, 0);
 
       // verify failure conditions
-      const block1 = await fixture.database.getBlockInfo(1);
+      const block1 = await fixture.database.getLatestBlockInfo();
       const transactionsBlock1 = block1.transactions;
       // console.log(JSON.parse(transactionsBlock1[7].logs).errors[0]);
       // console.log(JSON.parse(transactionsBlock1[8].logs).errors[0]);
@@ -255,7 +256,7 @@ describe('NFT Auction Smart Contract', function () {
       };
       await fixture.sendBlock(block);
 
-      let res = await fixture.database.getBlockInfo(2);
+      let res = await fixture.database.getLatestBlockInfo();
       // console.log(res.transactions[0].logs);
       params = await fixture.database.find({
         contract: 'nftauction',
@@ -284,7 +285,7 @@ describe('NFT Auction Smart Contract', function () {
       };
       await fixture.sendBlock(block);
 
-      res = await fixture.database.getBlockInfo(3);
+      res = await fixture.database.getLatestBlockInfo();
       // console.log(res.transactions[0].logs);
       params = await fixture.database.find({
         contract: 'nftauction',
@@ -313,7 +314,7 @@ describe('NFT Auction Smart Contract', function () {
       };
       await fixture.sendBlock(block);
 
-      res = await fixture.database.getBlockInfo(4);
+      res = await fixture.database.getLatestBlockInfo();
       // console.log(res.transactions[0].logs);
       params = await fixture.database.find({
         contract: 'nftauction',
@@ -344,7 +345,7 @@ describe('NFT Auction Smart Contract', function () {
       };
       await fixture.sendBlock(block);
 
-      res = await fixture.database.getBlockInfo(5);
+      res = await fixture.database.getLatestBlockInfo();
       // console.log(res.transactions[0].logs);
       // console.log(res.transactions[1].logs);
       // console.log(res.transactions[2].logs);
@@ -1083,6 +1084,7 @@ describe('NFT Auction Smart Contract', function () {
       };
 
       await fixture.sendBlock(block);
+      await tableAsserts.assertNoErrorInLastBlock();
 
       const res = await fixture.database.getLatestBlockInfo();
       const txs = res.transactions;
@@ -1091,8 +1093,6 @@ describe('NFT Auction Smart Contract', function () {
       await assertBalances(['cryptomancer', 'dave', 'bidmaker', 'ali-h', "mart"], ['100', '100', '0', '99', "1"], 'BEE');
 
       await assertAuction('AUCTION-TX', true);
-
-      await tableAsserts.assertNoErrorInLastBlock();
 
       resolve();
     })

@@ -13,14 +13,17 @@ const { assertError } = require('../libs/util/testing/Asserts');
 
 const tknContractPayload = setupContractPayload('tokens', './contracts/tokens.js');
 const pegContractPayload = setupContractPayload('hivepegged', './contracts/hivepegged.js');
-const mktContractPayload = setupContractPayload('market', './contracts/market.js');
+const mktContractPayload = setupContractPayload('market', './contracts/market.js', (contractCode) => contractCode.replace(/ORDER_FETCH_LIMIT = .*;/, 'ORDER_FETCH_LIMIT = 2;'));
+const oldMktContractPayload = setupContractPayload('market', './contracts/testing/market_20240727.js');
 
 const fixture = new Fixture();
 const tableAsserts = new TableAsserts(fixture);
 
+const TICK_TEST_ENABLED = false;
+
 // Market
 describe('Market', function() {
-  this.timeout(10000);
+  this.timeout(20000);
 
   before((done) => {
     new Promise(async (resolve) => {
@@ -57,12 +60,135 @@ describe('Market', function() {
   afterEach((done) => {
       // runs after each test in this block
       new Promise(async (resolve) => {
+        fixture.tearDown();
         await db.dropDatabase()
         resolve();
       })
         .then(() => {
           done()
         })
+  });
+
+  it('prevents small order exploits', (done) => {
+    new Promise(async (resolve) => {
+
+      await fixture.setUp();
+
+      let refBlockNumber = fixture.getNextRefBlockNumber();
+      let transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(tknContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'contract', 'update', JSON.stringify(pegContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(oldMktContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'create', '{ "isSignedWithActiveKey": true,  "name": "token", "url": "https://token.com", "symbol": "TEST", "precision": 8, "maxSupply": "1000" }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'issue', '{ "symbol": "TEST", "to": "vitalik", "quantity": "500", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'tokens', 'transfer', '{ "symbol": "SWAP.HIVE", "to": "satoshi", "quantity": "500", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'tokens', 'transfer', '{ "symbol": "SWAP.HIVE", "to": "vitalik", "quantity": "500", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'issue', '{ "symbol": "TEST", "to": "satoshi", "quantity": "10", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'vitalik', 'market', 'buy', '{ "symbol": "TEST", "quantity": "100", "price": "0.02974381", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'vitalik', 'market', 'sell', '{ "symbol": "TEST", "quantity": "100", "price": "0.02999000", "isSignedWithActiveKey": true }'));
+
+      let block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD2',
+        prevRefHiveBlockId: 'ABCD1',
+        timestamp: '2018-06-01T00:00:00',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+
+      // verify market is setup for the test
+      await tableAsserts.assertUserBalances({ account: 'satoshi', symbol: 'SWAP.HIVE', balance: '500'});
+      await tableAsserts.assertUserBalances({ account: 'satoshi', symbol: 'TEST', balance: '10'});
+      await tableAsserts.assertUserBalances({ account: 'vitalik', symbol: 'SWAP.HIVE', balance: '497.02561900'});
+      await tableAsserts.assertUserBalances({ account: 'vitalik', symbol: 'TEST', balance: '400.00000000'});
+
+      let balances = await fixture.database.find({
+        contract: 'tokens',
+        table: 'contractsBalances',
+        query: {
+          symbol: 'TEST'
+        }
+      });
+
+      console.log(balances);
+      assert.equal(balances[0].balance, '100');
+      assert.equal(balances[0].symbol, 'TEST');
+      assert.equal(balances[0].account, 'market');
+
+      balances = await fixture.database.find({
+        contract: 'tokens',
+        table: 'contractsBalances',
+        query: {
+          symbol: 'SWAP.HIVE'
+        }
+      });
+
+      console.log(balances);
+      assert.equal(balances[0].balance, '2.97438100');
+      assert.equal(balances[0].symbol, 'SWAP.HIVE');
+      assert.equal(balances[0].account, 'market');
+
+      // perform small buys & sells that demonstrates the exploit
+      refBlockNumber = fixture.getNextRefBlockNumber();
+      transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'sell', '{ "symbol": "TEST", "quantity": "0.00000017", "price": "0.02974381", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'buy', '{ "symbol": "TEST", "quantity": "0.00000049", "price": "0.02999", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'marketSell', '{ "symbol": "TEST", "quantity": "0.00000017", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'buy', '{ "symbol": "TEST", "quantity": "0.00000049", "price": "0.02999", "isSignedWithActiveKey": true }'));
+
+      block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD3',
+        prevRefHiveBlockId: 'ABCD2',
+        timestamp: '2018-06-01T00:00:03',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+
+      await tableAsserts.assertUserBalances({ account: 'satoshi', symbol: 'SWAP.HIVE', balance: '500.00000000'});
+      await tableAsserts.assertUserBalances({ account: 'satoshi', symbol: 'TEST', balance: '10.00000064'});
+      await tableAsserts.assertUserBalances({ account: 'vitalik', symbol: 'SWAP.HIVE', balance: '497.02561902'});
+      await tableAsserts.assertUserBalances({ account: 'vitalik', symbol: 'TEST', balance: '400.00000034'});
+
+      // now update the market contract (which patches the exploit) and confirm that the above buys & sells no longer work
+      refBlockNumber = fixture.getNextRefBlockNumber();
+      transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(mktContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'sell', '{ "symbol": "TEST", "quantity": "0.00000017", "price": "0.02974381", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'buy', '{ "symbol": "TEST", "quantity": "0.00000049", "price": "0.02999", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'marketSell', '{ "symbol": "TEST", "quantity": "0.00000017", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'buy', '{ "symbol": "TEST", "quantity": "0.00000049", "price": "0.02999", "isSignedWithActiveKey": true }'));
+
+      block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD4',
+        prevRefHiveBlockId: 'ABCD3',
+        timestamp: '2018-06-01T00:00:06',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+
+      await tableAsserts.assertUserBalances({ account: 'satoshi', symbol: 'SWAP.HIVE', balance: '499.99999996'});
+      await tableAsserts.assertUserBalances({ account: 'satoshi', symbol: 'TEST', balance: '10.00000162'});
+      await tableAsserts.assertUserBalances({ account: 'vitalik', symbol: 'SWAP.HIVE', balance: '497.02561906'});
+      await tableAsserts.assertUserBalances({ account: 'vitalik', symbol: 'TEST', balance: '400.00000034'});
+
+      const block3 = await fixture.database.getLatestBlockInfo();
+      const transactionsBlock3 = block3.transactions;
+      console.log(JSON.parse(transactionsBlock3[1].logs).errors);
+      console.log(JSON.parse(transactionsBlock3[3].logs).errors);
+      assert.equal(JSON.parse(transactionsBlock3[1].logs).errors[0], 'order cannot be placed as it cannot be filled');
+      assert.equal(JSON.parse(transactionsBlock3[3].logs).errors[0], 'the order cannot be filled');
+
+      resolve();
+    })
+      .then(() => {
+        fixture.tearDown();
+        done();
+      });
   });
 
   it('market sells to multiple buyers', (done) => {
@@ -872,9 +998,11 @@ describe('Market', function() {
       transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'transfer', `{ "symbol": "${CONSTANTS.UTILITY_TOKEN_SYMBOL}", "to": "harpagon", "quantity": "1000", "isSignedWithActiveKey": true }`));
       transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'create', '{ "isSignedWithActiveKey": true,  "name": "token", "url": "https://token.com", "symbol": "TKN.TEST", "precision": 5, "maxSupply": "1000", "isSignedWithActiveKey": true }'));
       transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'tokens', 'transfer', '{ "symbol": "SWAP.HIVE", "to": "satoshi", "quantity": "123.456", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'tokens', 'transfer', '{ "symbol": "SWAP.HIVE", "to": "sunsetjesus", "quantity": "123.456", "isSignedWithActiveKey": true }'));
       transactions.push(new Transaction(refBlockNumber, 'TXID1235', 'satoshi', 'market', 'buy', '{ "symbol": "TKN.TEST", "quantity": "1", "price": "0.00000001", "expiration": 2592000, "isSignedWithActiveKey": true }'));
       transactions.push(new Transaction(refBlockNumber, 'TXID1236', 'satoshi', 'market', 'buy', '{ "symbol": "TKN.TEST", "quantity": "2", "price": "0.00000001", "expiration": 10, "isSignedWithActiveKey": true }'));
       transactions.push(new Transaction(refBlockNumber, 'TXID1237', 'satoshi', 'market', 'buy', '{ "symbol": "TKN.TEST", "quantity": "3", "price": "0.00000001", "expiration": 30000000, "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, 'TXID1238', 'sunsetjesus', 'market', 'buy', '{ "symbol": "TKN.TEST", "quantity": "4", "price": "0.00000001", "expiration": 30000000, "isSignedWithActiveKey": true }'));
 
       let block = {
         refHiveBlockNumber: refBlockNumber,
@@ -890,7 +1018,6 @@ describe('Market', function() {
         contract: 'market',
         table: 'buyBook',
         query: {
-          account: 'satoshi',
           symbol: 'TKN.TEST'
         }
       });
@@ -918,6 +1045,22 @@ describe('Market', function() {
       assert.equal(buyOrders[2].quantity, 3);
       assert.equal(buyOrders[2].timestamp, 1527811200);
       assert.equal(buyOrders[2].expiration, 1527811200 + 2592000);
+
+      // the order from sunsetjesus should be ignored as this account is on the blacklist
+      assert.equal(buyOrders.length, 3);
+
+      // no tokens should have left the blacklisted account
+      const accountBalances = await fixture.database.find({
+        contract: 'tokens',
+        table: 'balances',
+        query: {
+          account: 'sunsetjesus',
+          symbol: 'SWAP.HIVE'
+        }
+      });
+
+      assert.equal(accountBalances.length, 1);
+      assert.equal(accountBalances[0].balance, '123.456');
 
       resolve();
     })
@@ -952,7 +1095,7 @@ describe('Market', function() {
 
       await fixture.sendBlock(block);
 
-      const block1 = await fixture.database.getBlockInfo(1);
+      const block1 = await fixture.database.getLatestBlockInfo();
       const transactionsBlock1 = block1.transactions;
       assert.equal(JSON.parse(transactionsBlock1[5].logs).errors[0], 'order cannot be placed as it cannot be filled');
 
@@ -1123,7 +1266,7 @@ describe('Market', function() {
 
       await fixture.sendBlock(block);
 
-      const block1 = await fixture.database.getBlockInfo(1);
+      const block1 = await fixture.database.getLatestBlockInfo();
       const transactionsBlock1 = block1.transactions;
 
       assert.equal(JSON.parse(transactionsBlock1[5].logs).errors[0], 'order cannot be placed as it cannot be filled');
@@ -1203,7 +1346,7 @@ describe('Market', function() {
 
       await fixture.sendBlock(block);
 
-      let res = await fixture.database.getBlockInfo(2);
+      let res = await fixture.database.getLatestBlockInfo();
 
       const block2 = res;
       const transactionsBlock2 = block2.transactions;
@@ -2431,6 +2574,282 @@ describe('Market', function() {
 
       assert.equal(buyOrders.length, 0);
 
+      resolve();
+    })
+      .then(() => {
+        fixture.tearDown();
+        done();
+      });
+  });
+
+  it('initialization of market order limits', (done) => {
+    new Promise(async (resolve) => {
+
+      await fixture.setUp();
+
+      let refBlockNumber = fixture.getNextRefBlockNumber();
+      let transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(tknContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'contract', 'update', JSON.stringify(pegContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(oldMktContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'create', '{ "isSignedWithActiveKey": true,  "name": "token", "url": "https://token.com", "symbol": "TEST", "precision": 8, "maxSupply": "1000" }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'issue', '{ "symbol": "TEST", "to": "vitalik", "quantity": "500", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'tokens', 'transfer', '{ "symbol": "SWAP.HIVE", "to": "satoshi", "quantity": "500", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'tokens', 'transfer', '{ "symbol": "SWAP.HIVE", "to": "vitalik", "quantity": "500", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'issue', '{ "symbol": "TEST", "to": "satoshi", "quantity": "10", "isSignedWithActiveKey": true }'));
+      
+      for(let i = 0; i < 15; i++){
+        transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'vitalik', 'market', 'buy', '{ "symbol": "TEST", "quantity": "1", "price": "0.00000381", "isSignedWithActiveKey": true }'));
+        transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'vitalik', 'market', 'sell', '{ "symbol": "TEST", "quantity": "1", "price": "1", "isSignedWithActiveKey": true }'));
+      }
+
+      let block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD2',
+        prevRefHiveBlockId: 'ABCD1',
+        timestamp: '2018-06-01T00:00:00',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+
+      // verify market is setup for the test
+      let buyOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'buyBook',
+        query: {}
+      });
+      let sellOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'sellBook',
+        query: {}
+      });
+
+      assert.strictEqual(buyOrders.length, 15);
+      assert.strictEqual(sellOrders.length, 15);
+
+      // now update the market contract (which adds the order limit) and confirm that the above buys & sells are counted for account
+      refBlockNumber = fixture.getNextRefBlockNumber();
+      transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(mktContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'buy', '{ "symbol": "TEST", "quantity": "1", "price": "0.000381", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'vitalik', 'market', 'buy', '{ "symbol": "TEST", "quantity": "1", "price": "0.000381", "isSignedWithActiveKey": true }'));
+
+      block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD4',
+        prevRefHiveBlockId: 'ABCD3',
+        timestamp: '2018-06-01T00:00:06',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+
+      buyOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'buyBook',
+        query: {}
+      });
+      sellOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'sellBook',
+        query: {}
+      });
+      
+
+      assert.strictEqual(buyOrders.length, 17)
+      assert.strictEqual(sellOrders.length, 15)
+
+      resolve();
+    })
+      .then(() => {
+        fixture.tearDown();
+        done();
+      });
+  });
+
+  it('prevent creation of more than allowed orders', (done) => {
+    new Promise(async (resolve) => {
+
+      await fixture.setUp();
+
+      let refBlockNumber = fixture.getNextRefBlockNumber();
+      let transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(tknContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'contract', 'update', JSON.stringify(pegContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(mktContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'create', '{ "isSignedWithActiveKey": true,  "name": "token", "url": "https://token.com", "symbol": "TEST", "precision": 8, "maxSupply": "1000" }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'create', '{ "isSignedWithActiveKey": true,  "name": "token", "url": "https://token.com", "symbol": "TKN.TEST", "precision": 5, "maxSupply": "1000", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'tokens', 'transfer', '{ "symbol": "SWAP.HIVE", "to": "satoshi", "quantity": "123.456", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'tokens', 'issue', '{ "symbol": "TEST", "to": "satoshi", "quantity": "500", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, 'TXID1235', 'satoshi', 'market', 'buy', '{ "symbol": "TKN.TEST", "quantity": "1", "price": "0.1", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, 'TXID1236', 'satoshi', 'market', 'sell', '{ "symbol": "TEST", "quantity": "1", "price": "1.1", "isSignedWithActiveKey": true }'));
+
+      for (let d = 0; d < 100; d++){
+        transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId() + d, 'satoshi', 'market', 'buy', '{ "symbol": "TKN.TEST", "quantity": "1", "price": "0.1", "isSignedWithActiveKey": true }'));
+        transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId() + "A" + d, 'satoshi', 'market', 'sell', '{ "symbol": "TEST", "quantity": "1", "price": "1.1", "isSignedWithActiveKey": true }'));
+      }
+
+      block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD1',
+        prevRefHiveBlockId: 'ABCD2',
+        timestamp: '2018-06-01T00:00:00',
+        transactions,
+      };
+      await fixture.sendBlock(block);
+
+      const block1 = await fixture.database.getLatestBlockInfo();
+      const transactionsBlock1 = block1.transactions;
+
+      // verify we have not more than 200 orders on market and counter is correct
+      let buyOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'buyBook',
+        query: {}
+      });
+      let sellOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'sellBook',
+        query: {}
+      });
+
+      assert.strictEqual(buyOrders.length, 100);
+      assert.strictEqual(sellOrders.length, 100);
+      assert.strictEqual(JSON.parse(transactionsBlock1[transactionsBlock1.length - 1].logs).errors[0], 'too many open orders');
+
+
+      // now lets cancel some orders
+      transactions = [];
+      refBlockNumber = fixture.getNextRefBlockNumber();
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'cancel', '{ "account": "satoshi", "id": "TXID1235", "type": "buy", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'market', 'cancel', '{ "account": "satoshi", "id": "TXID1236", "type": "sell", "isSignedWithActiveKey": true }'));
+
+      block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD1',
+        prevRefHiveBlockId: 'ABCD2',
+        timestamp: '2018-06-01T00:00:03',
+        transactions,
+      };
+      await fixture.sendBlock(block);
+
+      // verify counter is decremented on 2
+      buyOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'buyBook',
+        query: {}
+      });
+      sellOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'sellBook',
+        query: {}
+      });
+
+      assert.strictEqual(buyOrders.length, 99);
+      assert.strictEqual(sellOrders.length, 99);
+
+      // now lets add again 3 orders
+      transactions = [];
+      refBlockNumber = fixture.getNextRefBlockNumber();
+      transactions.push(new Transaction(refBlockNumber, 'TXIDD1235', 'satoshi', 'market', 'buy', '{ "symbol": "TKN.TEST", "quantity": "1", "price": "0.1", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, 'TXIDF1236', 'satoshi', 'market', 'sell', '{ "symbol": "TEST", "quantity": "1", "price": "1.1", "isSignedWithActiveKey": true }'));
+      transactions.push(new Transaction(refBlockNumber, 'TXIDA236', 'satoshi', 'market', 'sell', '{ "symbol": "TEST", "quantity": "1", "price": "1.1", "isSignedWithActiveKey": true }'));
+
+      block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD1',
+        prevRefHiveBlockId: 'ABCD2',
+        timestamp: '2018-06-01T00:00:06',
+        transactions,
+      };
+      await fixture.sendBlock(block);
+
+      // verify counter is incremented on 2
+      buyOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'buyBook',
+        query: {}
+      });
+      sellOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'sellBook',
+        query: {}
+      });
+
+      assert.strictEqual(buyOrders.length, 100);
+      assert.strictEqual(sellOrders.length, 100);
+
+      resolve();
+    })
+      .then(() => {
+        fixture.tearDown();
+        done();
+      });
+  });
+
+  it('ticks and removes blacklisted orders', (done) => {
+    new Promise(async (resolve) => {
+
+      await fixture.setUp();
+
+      if (TICK_TEST_ENABLED !== true) {
+        console.log("Tick test disabled; skipping");
+        resolve();
+      }
+
+      let refBlockNumber = fixture.getNextRefBlockNumber();
+      let transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(tknContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_PEGGED_ACCOUNT, 'contract', 'update', JSON.stringify(pegContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'update', JSON.stringify(mktContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'registerTick', '{ "contractName": "market", "tickAction": "tick" }'));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'harpagon', 'accounts', 'register', ''));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'accounts', 'register', ''));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'vitalik', 'accounts', 'register', ''));
+
+      let block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD1',
+        prevRefHiveBlockId: 'ABCD2',
+        timestamp: '2018-06-01T00:00:00',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+
+      // now add a blacklisted order, and add new block
+      await fixture.database.insert({
+        contract: 'market',
+        table: 'sellBook',
+        record: {
+          account: 'shaggroed',
+          symbol: 'TVST'
+        },
+      });
+
+      refBlockNumber = fixture.getNextRefBlockNumber();
+      transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), 'satoshi', 'whatever', 'whatever', '')); // No-op to force block creation.
+      block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD2',
+        prevRefHiveBlockId: 'ABCD1',
+        timestamp: '2018-06-01T00:00:00',
+        transactions,
+      }
+      await fixture.sendBlock(block);
+
+      let sellOrders = await fixture.database.find({
+        contract: 'market',
+        table: 'sellBook',
+        query: {
+          account: 'shaggroed',
+          symbol: 'TVST'
+        }
+      });
+
+      assert.equal(sellOrders.length, 0);
       resolve();
     })
       .then(() => {

@@ -27,6 +27,7 @@
         "maxOffset" : -1,
         "maxBatchLength" : 1,
         "logRequests" : false,
+        "allowArbitraryProject" : false,
         "disabledMethods" : {
             "blockchain" : ["getBlockRangeInfo"],
             "contracts" : []
@@ -35,5 +36,12 @@
     "rpcWebsockets" : {
         "enabled" : true,
         "port" : 5002
+    },
+    "hashVerificationNode": false,
+    "streamerConfig": {
+        "antiForkBufferMaxSize": 2,
+        "maxQps": 1,
+        "lookaheadBufferSize": 5,
+        "useBlockApi": false
     }
 }

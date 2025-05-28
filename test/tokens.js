@@ -58,6 +58,7 @@ describe('Tokens smart contract', function () {
   afterEach((done) => {
       // runs after each test in this block
       new Promise(async (resolve) => {
+        fixture.tearDown();
         await db.dropDatabase()
         resolve();
       })
@@ -217,7 +218,7 @@ describe('Tokens smart contract', function () {
 
       await fixture.sendBlock(block);
 
-      const res = await fixture.database.getBlockInfo(1);
+      const res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;
@@ -537,7 +538,7 @@ describe('Tokens smart contract', function () {
 
       assert.equal(JSON.parse(token.metadata).url, 'https://token.com');
 
-      res = await fixture.database.getBlockInfo(2);
+      res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;
@@ -670,6 +671,18 @@ describe('Tokens smart contract', function () {
       assert.equal(token.issuer, 'satoshi');
       assert.equal(token.symbol, 'TKN.TEST');
 
+      res = await fixture.database.getLatestBlockInfo();
+
+      const logs = JSON.parse(res.transactions[0].logs);
+      const events = logs.events;
+
+      console.log(events);
+      assert.equal(events[0].contract, 'tokens');
+      assert.equal(events[0].event, 'transferOwnership');
+      assert.equal(events[0].data.symbol, 'TKN.TEST');
+      assert.equal(events[0].data.from, CONSTANTS.HIVE_ENGINE_ACCOUNT);
+      assert.equal(events[0].data.to, 'satoshi');
+
       resolve();
     })
       .then(() => {
@@ -739,7 +752,7 @@ describe('Tokens smart contract', function () {
       assert.equal(token.issuer, CONSTANTS.HIVE_ENGINE_ACCOUNT);
       assert.equal(token.symbol, 'TKN.TEST');
 
-      res = await fixture.database.getBlockInfo(2);
+      res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;
@@ -839,7 +852,7 @@ describe('Tokens smart contract', function () {
 
       await fixture.sendBlock(block);
 
-      const res = await fixture.database.getBlockInfo(1);
+      const res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;
@@ -994,7 +1007,7 @@ describe('Tokens smart contract', function () {
 
       assert.equal(res.balance, 100);
 
-      res = await fixture.database.getBlockInfo(2);
+      res = await fixture.database.getLatestBlockInfo();
       const block2 = res;
       const transactionsBlock2 = block2.transactions;
 
@@ -1042,7 +1055,7 @@ describe('Tokens smart contract', function () {
 
       await fixture.sendBlock(block);
 
-      const res = await fixture.database.getBlockInfo(1);
+      const res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;
@@ -1129,7 +1142,7 @@ describe('Tokens smart contract', function () {
 
       await fixture.sendBlock(block);
 
-      let res = await fixture.database.getBlockInfo(2);
+      let res = await fixture.database.getLatestBlockInfo();
 
       const block2 = res;
       const transactionsBlock2 = block2.transactions;
@@ -1203,7 +1216,7 @@ describe('Tokens smart contract', function () {
 
       await fixture.sendBlock(block);
 
-      const res = await fixture.database.getBlockInfo(1);
+      const res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;
@@ -1391,7 +1404,7 @@ describe('Tokens smart contract', function () {
 
       await fixture.sendBlock(block);
 
-      const res = await fixture.database.getBlockInfo(1);
+      const res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;
@@ -1616,7 +1629,7 @@ describe('Tokens smart contract', function () {
 
       await fixture.sendBlock(block);
 
-      const res = await fixture.database.getBlockInfo(1);
+      const res = await fixture.database.getLatestBlockInfo();
 
       const block1 = res;
       const transactionsBlock1 = block1.transactions;

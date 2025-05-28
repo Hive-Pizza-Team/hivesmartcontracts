@@ -107,7 +107,7 @@ async function getLastPoolId() {
 
 // distribution test suite
 describe('marketpools tests', function () {
-  this.timeout(30000);
+  this.timeout(20000);
 
   before((done) => {
     new Promise(async (resolve) => {
@@ -144,6 +144,7 @@ describe('marketpools tests', function () {
   afterEach((done) => {
       // runs after each test in this block
       new Promise(async (resolve) => {
+        fixture.tearDown();
         await db.dropDatabase()
         resolve();
       })

@@ -3,6 +3,7 @@ const http = require('http');
 const cors = require('cors');
 const express = require('express');
 const bodyParser = require('body-parser');
+const morgan = require('morgan');
 const { IPC } = require('../libs/IPC');
 const { Database } = require('../libs/Database');
 
@@ -18,16 +19,6 @@ const ipc = new IPC(PLUGIN_NAME);
 let serverRPC = null;
 let server = null;
 let database = null;
-
-const requestLogger = function (req, _, next) {
-  let truncatedBody = req.body;
-  if (Array.isArray(req.body) && req.body.length > 10) {
-    console.log(`Incoming batch request truncated to length 10 from ${req.body.length}`);
-    truncatedBody = req.body.slice(0, 10);
-  }
-  console.log(`Incoming request from ${req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress} - ${JSON.stringify(truncatedBody)}`);
-  next();
-}
 
 async function generateStatus() {
   return new Promise(async (resolve, reject) => {
@@ -108,6 +99,23 @@ function blockchainRPC() {
           callback({
             code: 400,
             message: 'missing or wrong parameters: blockNumber is required',
+          }, null);
+        }
+      } catch (error) {
+        callback(error, null);
+      }
+    },
+    getBlockInfoByHiveBlock: async (args, callback) => {
+      try {
+        const { hiveBlockNumber } = args;
+
+        if (Number.isInteger(hiveBlockNumber)) {
+          const block = await database.getBlockInfoByHiveBlock(hiveBlockNumber);
+          callback(null, block);
+        } else {
+          callback({
+            code: 400,
+            message: 'missing or wrong parameters: hiveBlockNumber is required',
           }, null);
         }
       } catch (error) {
@@ -206,15 +214,25 @@ function contractsRPC() {
 
     findOne: async (args, callback) => {
       try {
-        const { contract, table, query } = args;
+        const { contract, table, query, project } = args;
+        const prj = project || {};
+        if (!config.rpcConfig.allowArbitraryProject && prj && typeof prj === 'object' && !Object.values(prj).every(x => (x === 0 || x === 1))) {
+          callback({
+            code: 400,
+            message: 'arbitrary key for project is not allowed, you may only include or exclude existing keys',
+          }, null);
+          return;
+        }
 
         if (contract && typeof contract === 'string'
           && table && typeof table === 'string'
-          && query && typeof query === 'object') {
+          && query && typeof query === 'object'
+          && prj && typeof prj === 'object') {
           const result = await database.findOne({
             contract,
             table,
             query,
+            project : prj
           });
 
           callback(null, result);
@@ -238,6 +256,7 @@ function contractsRPC() {
           limit,
           offset,
           indexes,
+          project
         } = args;
 
         if (contract && typeof contract === 'string'
@@ -246,7 +265,7 @@ function contractsRPC() {
           const lim = limit || config.rpcConfig.maxLimit;
           const off = offset || 0;
           const ind = indexes || [];
-
+          const prj = project || {};
           if (lim > config.rpcConfig.maxLimit) {
             callback({
               code: 400,
@@ -263,6 +282,14 @@ function contractsRPC() {
             return;
           }
 
+          if (!config.rpcConfig.allowArbitraryProject && typeof prj === 'object' && !Object.values(prj).every(x => (x === 0 || x === 1))) {
+            callback({
+              code: 400,
+              message: 'arbitrary key for project is not allowed, you may only include or exclude existing keys',
+            }, null);
+            return;
+          }
+
           const result = await database.find({
             contract,
             table,
@@ -270,8 +297,8 @@ function contractsRPC() {
             limit: lim,
             offset: off,
             indexes: ind,
+            project : prj,
           }, true);
-
           callback(null, result);
         } else {
           callback({
@@ -326,7 +353,9 @@ const init = async (conf, callback) => {
   serverRPC.set('trust proxy', true);
   serverRPC.set('trust proxy', 'loopback');
   if (config.rpcConfig.logRequests) {
-    serverRPC.use(requestLogger);
+    morgan.token('ip', (req, res) => req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress);
+    morgan.token('body', (req, res) => JSON.stringify(req.body));
+    serverRPC.use(morgan(':method | :status | :url | :ip | :response-time ms | :body'));
   }
   serverRPC.post('/blockchain', jayson.server(blockchainRPC(), { maxBatchLength : config.rpcConfig.maxBatchLength }).middleware());
   serverRPC.post('/contracts', jayson.server(contractsRPC(), { maxBatchLength : config.rpcConfig.maxBatchLength }).middleware());

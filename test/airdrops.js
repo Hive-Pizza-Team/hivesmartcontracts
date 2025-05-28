@@ -38,7 +38,7 @@ async function assertPendingAirdrop(airdropId, reverse = false) {
 
 // smart contract
 describe('Airdrops Smart Contract', function () {
-  this.timeout(20000);
+  this.timeout(10000);
 
   before((done) => {
     new Promise(async (resolve) => {
@@ -75,6 +75,7 @@ describe('Airdrops Smart Contract', function () {
   afterEach((done) => {
     // runs after each test in this block
     new Promise(async (resolve) => {
+      fixture.tearDown();
       await db.dropDatabase();
       resolve();
     })

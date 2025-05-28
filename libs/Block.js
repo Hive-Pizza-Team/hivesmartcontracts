@@ -1,3 +1,4 @@
+const { performance } = require('perf_hooks');
 const SHA256 = require('crypto-js/sha256');
 const enchex = require('crypto-js/enc-hex');
 const log = require('loglevel');
@@ -10,7 +11,7 @@ const { setupContractPayload } = require('../libs/util/contractUtil');
 const revertCommentsContractPayload = setupContractPayload('comments', './contracts/revert/comments_minify_20211027.js');
 
 class Block {
-  constructor(timestamp, refHiveBlockNumber, refHiveBlockId, prevRefHiveBlockId, transactions, previousBlockNumber, previousHash = '', previousDatabaseHash = '') {
+  constructor(timestamp, refHiveBlockNumber, refHiveBlockId, prevRefHiveBlockId, transactions, previousBlockNumber, previousHash = '', previousDatabaseHash = '', enablePerUserTxLimit = true) {
     this.blockNumber = previousBlockNumber + 1;
     this.refHiveBlockNumber = refHiveBlockNumber;
     this.refHiveBlockId = refHiveBlockId;
@@ -28,6 +29,7 @@ class Block {
     this.witness = '';
     this.signingKey = '';
     this.roundSignature = '';
+    this.enablePerUserTxLimit = enablePerUserTxLimit;
   }
 
   // calculate the hash of the block
@@ -104,8 +106,35 @@ class Block {
     }
   }
 
+  applyPerUserTxLimit() {
+    if (this.enablePerUserTxLimit && this.refHiveBlockNumber >= 93100601 && this.refHiveBlockNumber < 96287448) {
+      const perUserTxLimit = 20;
+      const filteredTransactions = [];
+      const transactionsCountBySender = {};
+
+      for (let idx = 0; idx < this.transactions.length; idx += 1) {
+        const tx = this.transactions[idx];
+
+        if (!transactionsCountBySender[tx.sender]) {
+          transactionsCountBySender[tx.sender] = 0;
+        }
+
+        if (transactionsCountBySender[tx.sender] < perUserTxLimit || tx.sender === 'null') {
+          filteredTransactions.push(tx);
+
+          transactionsCountBySender[tx.sender] += 1;
+        } else {
+          log.warn('Transaction ignored', tx);
+        }
+      }
+      this.transactions = filteredTransactions;
+    }
+  }
+
   // produce the block (deploy a smart contract or execute a smart contract)
   async produceBlock(database, jsVMTimeout, mainBlock) {
+    this.applyPerUserTxLimit();
+
     await this.blockAdjustments(database);
 
     const nbTransactions = this.transactions.length;
@@ -114,17 +143,25 @@ class Block {
 
     let relIndex = 0;
     const allowCommentContract = this.refHiveBlockNumber > 54560500;
+
+    const userActionCountMap = {};
+
     for (let i = 0; i < nbTransactions; i += 1) {
       const transaction = this.transactions[i];
       log.info('Processing tx ', transaction);
-      await this.processTransaction(database, jsVMTimeout, transaction, currentDatabaseHash); // eslint-disable-line
+
+      userActionCountMap[transaction.sender] = (userActionCountMap[transaction.sender] ?? 0) + 1;
+
+      await this.processTransaction(database, jsVMTimeout, transaction, currentDatabaseHash, userActionCountMap[transaction.sender]); // eslint-disable-line
 
       currentDatabaseHash = transaction.databaseHash;
 
       if ((transaction.contract !== 'comments' || allowCommentContract) || transaction.logs === '{}') {
-        if (mainBlock && currentDatabaseHash !== mainBlock.transactions[relIndex].databaseHash) {
-          log.warn(mainBlock.transactions[relIndex]); // eslint-disable-line no-console
-          log.warn(transaction); // eslint-disable-line no-console
+        if (mainBlock && (
+          currentDatabaseHash !== mainBlock.transactions[relIndex].databaseHash
+          || transaction.payload !== mainBlock.transactions[relIndex].payload)) {
+          log.warn(mainBlock.transactions[relIndex]);
+          log.warn(transaction);
           throw new Error('tx hash mismatch with api');
         }
         relIndex += 1;
@@ -197,7 +234,7 @@ class Block {
 
     // add odd blocks, consensus appended double virtual transactions
     if (this.refHiveBlockNumber === 59376574) {
-        this.virtualTransactions = this.virtualTransactions.concat(this.virtualTransactions);
+      this.virtualTransactions = this.virtualTransactions.concat(this.virtualTransactions);
     }
 
     if (this.transactions.length > 0 || this.virtualTransactions.length > 0) {
@@ -213,7 +250,8 @@ class Block {
     }
   }
 
-  async processTransaction(database, jsVMTimeout, transaction, currentDatabaseHash) {
+  async processTransaction(database, jsVMTimeout, transaction, currentDatabaseHash, userActionCount) {
+    const profStartTime = performance.now();
     const {
       sender,
       contract,
@@ -222,6 +260,7 @@ class Block {
     } = transaction;
 
     let results = null;
+    let burnResults = null;
     let newCurrentDatabaseHash = currentDatabaseHash;
 
     // init the database hash for that transactions
@@ -248,10 +287,51 @@ class Block {
           results = { logs: { errors: ['registerTick unauthorized'] } };
         }
       } else {
-        results = await SmartContracts.executeSmartContract(// eslint-disable-line
-          database, transaction, this.blockNumber, this.timestamp,
-          this.refHiveBlockId, this.prevRefHiveBlockId, jsVMTimeout,
-        );
+        
+        // always execute burnFee to keep logic more dynamic in future without updating core.
+        const shouldCheckBurnFee = this.refHiveBlockNumber >= 96287448 && userActionCount && sender != null && sender !== 'null';
+        if (shouldCheckBurnFee) {
+          const txPayloadObj = transaction.payload ? JSON.parse(transaction.payload) : {};
+          const resourceManagerTx = {
+            ...transaction,
+            contract: 'resourcemanager',
+            action: 'burnFee',
+            payload: JSON.stringify({
+              userActionCount,
+              contract: transaction.contract,
+              action: transaction.action,
+              payload: txPayloadObj
+            })
+          };
+          burnResults = await SmartContracts.executeSmartContract(// eslint-disable-line
+            database, resourceManagerTx, this.blockNumber, this.timestamp,
+            this.refHiveBlockId, this.prevRefHiveBlockId, jsVMTimeout
+          );
+        }
+
+        if ((burnResults?.logs?.errors?.length ?? 0) === 0) {
+          results = await SmartContracts.executeSmartContract(// eslint-disable-line
+            database, transaction, this.blockNumber, this.timestamp,
+            this.refHiveBlockId, this.prevRefHiveBlockId, jsVMTimeout
+          );
+        }
+
+        // Merge burnResults with results.
+        if (shouldCheckBurnFee)
+        {
+          results = results ?? {};
+          results.logs = {
+            events: [
+              ...(burnResults?.logs?.events ?? []),
+              ...(results?.logs?.events ?? [])
+            ],
+            errors: [
+              ...(burnResults?.logs?.errors ?? []),
+              ...(results?.logs?.errors ?? [])
+            ],
+          };
+        }
+
       }
     } else {
       results = { logs: { errors: ['the parameters sender, contract and action are required'] } };
@@ -266,13 +346,14 @@ class Block {
     // get the database hash
     newCurrentDatabaseHash = database.getDatabaseHash();
 
-
     log.info('Tx results: ', results);
     transaction.addLogs(results.logs);
     transaction.executedCodeHash = results.executedCodeHash || ''; // eslint-disable-line
     transaction.databaseHash = newCurrentDatabaseHash; // eslint-disable-line
 
     transaction.calculateHash();
+    const profEndTime = performance.now();
+    log.info(`${contract}.${action} processed in ${profEndTime - profStartTime} ms`);
   }
 }
 

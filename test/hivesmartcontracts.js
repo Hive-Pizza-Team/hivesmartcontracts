@@ -62,39 +62,6 @@ describe('Database', function () {
         })
   });
 
-  it.skip('should get the genesis block', (done) => {
-    new Promise(async (resolve) => {
-
-      await fixture.setUp();
-      const genesisBlock = await fixture.database.getBlockInfo(0);
-      assert.equal(genesisBlock.blockNumber, 0);
-
-      if (configFile.chainId === 'testnet1'
-        && configFile.genesisSteemBlock === 29862600
-        && CONSTANTS.UTILITY_TOKEN_SYMBOL === 'SSC') {
-          assert.equal(genesisBlock.hash, '51b19802489567cb2669bfb37119dbe09f36c0847fe2dca2e918176422a0bcd9');
-          assert.equal(genesisBlock.fixture.databaseHash, 'a3daa72622eb02abd0b1614943f45500633dc10789477e8ee538a8398e61f976');
-          assert.equal(genesisBlock.merkleRoot, '8b2c7d50aadcba182e4de6140d795b6e6e4e0a64b654d6b1a3ab48a234489293');
-      } else if (configFile.chainId === 'mainnet1'
-        && CONSTANTS.UTILITY_TOKEN_SYMBOL === 'ENG') {
-        assert.equal(genesisBlock.hash, 'c1dee96a6b7a0cc9408ccb407ab641f444c26f6859ba33b9c9ba2c0a368d20b2');
-        assert.equal(genesisBlock.fixture.databaseHash, 'a3daa72622eb02abd0b1614943f45500633dc10789477e8ee538a8398e61f976');
-        assert.equal(genesisBlock.merkleRoot, '7048315fc8861b98fe1b2a82b86a24f80aa6e6dd225223e39771807532f5fb21');
-      } else if (configFile.chainId === 'mainnet-hive'
-      && CONSTANTS.UTILITY_TOKEN_SYMBOL === 'BEE') {
-        assert.equal(genesisBlock.hash, '13bcc1207ec01a24c949bb423c37b00548457660c985fb2795745981edf17d7a');
-        assert.equal(genesisBlock.fixture.databaseHash, '9358cdfbc5d508a188506b51b6fbcb2a1a43322bf74179665520b7dc0510f0c7');
-        assert.equal(genesisBlock.merkleRoot, '5100259ec554ba31ffe14cb9a92817535258834536fc0b14d248875293541d6f');
-      }
-
-      resolve();
-    })
-      .then(() => {
-        fixture.tearDown();
-        done();
-      });
-  });
-
   it('should get the latest block', (done) => {
     new Promise(async (resolve) => {
 
@@ -182,6 +149,7 @@ describe('Smart Contracts', function ()  {
   afterEach((done) => {
       // runs after each test in this block
       new Promise(async (resolve) => {
+        fixture.tearDown();
         await db.dropDatabase()
         resolve();
       })
@@ -693,8 +661,8 @@ describe('Smart Contracts', function ()  {
 
       let users = await fixture.database.find(payload);
 
-      assert.equal(users[0]._id, 6);
-      assert.equal(users[4]._id, 2);
+      assert.equal(users[0].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT5');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT1');
 
       payload = {
         contract: 'usersContract',
@@ -707,8 +675,8 @@ describe('Smart Contracts', function ()  {
 
       users = await fixture.database.find(payload);
 
-      assert.equal(users[0]._id, 10);
-      assert.equal(users[4]._id, 5);
+      assert.equal(users[0].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT9');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT4');
 
       payload = {
         contract: 'usersContract',
@@ -731,7 +699,7 @@ describe('Smart Contracts', function ()  {
       });
   });
 
-  it.skip('should read the records from a smart contract table using an index ascending (string)', (done) => {
+  it('should read the records from a smart contract table using an index ascending (string)', (done) => {
     new Promise(async (resolve) => {
       
       await fixture.setUp();
@@ -798,8 +766,8 @@ describe('Smart Contracts', function ()  {
 
       let users = await fixture.database.find(payload);;
 
-      assert.equal(users[0]._id, 6);
-      assert.equal(users[4]._id, 2);
+      assert.equal(users[0].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT5');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT7');
 
       payload = {
         contract: 'usersContract',
@@ -812,8 +780,8 @@ describe('Smart Contracts', function ()  {
 
       users = await fixture.database.find(payload);;
 
-      assert.equal(users[0]._id, 10);
-      assert.equal(users[4]._id, 5);
+      assert.equal(users[0].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT9');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT6');
 
       payload = {
         contract: 'usersContract',
@@ -902,8 +870,8 @@ describe('Smart Contracts', function ()  {
 
       let users = await fixture.database.find(payload);;
 
-      assert.equal(users[0]._id, 5);
-      assert.equal(users[4]._id, 10);
+      assert.equal(users[0].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT4');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT9');
 
       payload = {
         contract: 'usersContract',
@@ -916,8 +884,8 @@ describe('Smart Contracts', function ()  {
 
       users = await fixture.database.find(payload);
 
-      assert.equal(users[0]._id, 2);
-      assert.equal(users[4]._id, 6);
+      assert.equal(users[0].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT1');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT5');
 
       payload = {
         contract: 'usersContract',
@@ -940,7 +908,7 @@ describe('Smart Contracts', function ()  {
       });
   });
 
-  it.skip('should read the records from a smart contract table using an index descending (string)', (done) => {
+  it('should read the records from a smart contract table using an index descending (string)', (done) => {
     new Promise(async (resolve) => {
       
       await fixture.setUp();
@@ -1006,8 +974,8 @@ describe('Smart Contracts', function ()  {
 
       let users = await fixture.database.find(payload);;
 
-      assert.equal(users[0]._id, 5);
-      assert.equal(users[4]._id, 10);
+      assert.equal(users[0].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT6');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT9');
 
       payload = {
         contract: 'usersContract',
@@ -1020,8 +988,8 @@ describe('Smart Contracts', function ()  {
 
       users = await fixture.database.find(payload);;
 
-      assert.equal(users[0]._id, 2);
-      assert.equal(users[4]._id, 6);
+      assert.equal(users[0].id, 'hive-engine');
+      assert.equal(users[4].id, 'CONSTANTS.HIVE_ENGINE_ACCOUNT5');
 
       payload = {
         contract: 'usersContract',
@@ -1397,7 +1365,87 @@ describe('Smart Contracts', function ()  {
       };
 
 
-      let refBlockNumber = fixture.getNextRefBlockNumber();
+      // before cutoff
+      let refBlockNumber = 1000;
+      let transactions = [];
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(usersContractPayload)));
+      transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(booksContractPayload)));
+      const addUserTx = fixture.getNextTxId();
+      transactions.push(new Transaction(refBlockNumber, addUserTx, CONSTANTS.HIVE_ENGINE_ACCOUNT, 'usersContract', 'addUser', ''));
+
+      let block = {
+        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockId: 'ABCD1',
+        prevRefHiveBlockId: 'ABCD2',
+        timestamp: '2018-06-01T00:00:00',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+      await tableAsserts.assertNoErrorInLastBlock();
+
+      const latestBlock = await fixture.database.getLatestBlockInfo();
+
+      const txs = latestBlock.transactions.filter(transaction => transaction.transactionId === addUserTx);
+
+      const logs = JSON.parse(txs[0].logs);
+
+      assert.equal(logs.events[0].event, 'contract_create');
+      assert.equal(logs.events[0].data.contractName, 'testcontract');
+      assert.equal(txs[0].executedCodeHash, '8f9127047c5d1b13db1d08452fc5de68fb0e787025a405a58a780e545bd21dab9d0452e18c4662c7a59f0068fa7b0e1302c50e470fc486043c624fead2559628');
+
+      resolve();
+    })
+      .then(() => {
+        fixture.tearDown();
+        done();
+      });
+  });
+
+
+  it('should trim executionCodeHash after cutoff', (done) => {
+    new Promise(async (resolve) => {
+
+      await fixture.setUp();
+
+      const usersSmartContractCode = `
+        actions.createSSC = async (payload) => {
+          // Initialize the smart contract via the create action
+        }
+
+        actions.addUser = async (payload) => {
+          await api.executeSmartContract('booksContract', 'addBook', { })
+        }
+      `;
+
+      const booksSmartContractCode = `
+      actions.createSSC = async (payload) => {
+        // Initialize the smart contract via the create action
+      }
+
+      actions.addBook = async (payload) => {
+        api.emit('contract_create', { "contractName": "testcontract" });
+      }
+    `;
+
+      const base64UsersSmartContractCode = Base64.encode(usersSmartContractCode);
+      const base64BooksSmartContractCode = Base64.encode(booksSmartContractCode);
+
+      const usersContractPayload = {
+        name: 'usersContract',
+        params: '',
+        code: base64UsersSmartContractCode,
+      };
+
+      const booksContractPayload = {
+        name: 'booksContract',
+        params: '',
+        code: base64BooksSmartContractCode,
+      };
+
+
+      // after cutoff for truncation
+      let refBlockNumber = 99999999;
       let transactions = [];
       transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(usersContractPayload)));
       transactions.push(new Transaction(refBlockNumber, fixture.getNextTxId(), CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(booksContractPayload)));
@@ -1422,6 +1470,7 @@ describe('Smart Contracts', function ()  {
 
       assert.equal(logs.events[0].event, 'contract_create');
       assert.equal(logs.events[0].data.contractName, 'testcontract');
+      assert.equal(txs[0].executedCodeHash, 'defd36cc6c47126c8ca875bd1952a09bbf6d7baaab13f75252b0d717b0d07664');
 
       resolve();
     })
@@ -1431,8 +1480,7 @@ describe('Smart Contracts', function ()  {
       });
   });
 
-
-  it('should log an error during the deployment of a smart contract if an error is thrown', (done) => {
+  it('should log a node error during the deployment of a smart contract if an error is thrown up to block 83680408', (done) => {
     new Promise(async (resolve) => {
 
       await fixture.setUp();
@@ -1453,13 +1501,12 @@ describe('Smart Contracts', function ()  {
         code: base64SmartContractCode,
       };
 
-      let refBlockNumber = fixture.getNextRefBlockNumber();
       let transactions = [];
       const crashTx = fixture.getNextTxId();
-      transactions.push(new Transaction(refBlockNumber, crashTx, CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(contractPayload)));
+      transactions.push(new Transaction(83680408, crashTx, CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(contractPayload)));
 
       let block = {
-        refHiveBlockNumber: refBlockNumber,
+        refHiveBlockNumber: 83680408,
         refHiveBlockId: 'ABCD1',
         prevRefHiveBlockId: 'ABCD2',
         timestamp: '2018-06-01T00:00:00',
@@ -1475,6 +1522,57 @@ describe('Smart Contracts', function ()  {
       const logs = JSON.parse(txs[0].logs);
 
       assert.equal(logs.errors[0], "SyntaxError: Unexpected identifier");
+
+      resolve();
+    })
+      .then(() => {
+        fixture.tearDown();
+        done();
+      });
+  });
+
+  it('should log a custom error during the deployment of a smart contract if an error is thrown after block 83680408', (done) => {
+    new Promise(async (resolve) => {
+
+      await fixture.setUp();
+
+      const smartContractCode = `
+        actions.createSSC = async (payload) => {
+          // Initialize the smart contract via the create action
+          
+          THIS CODE CRASHES :)
+        }
+      `;
+
+      const base64SmartContractCode = Base64.encode(smartContractCode);
+
+      const contractPayload = {
+        name: 'testcontract',
+        params: '',
+        code: base64SmartContractCode,
+      };
+
+      let transactions = [];
+      const crashTx = fixture.getNextTxId();
+      transactions.push(new Transaction(83680409, crashTx, CONSTANTS.HIVE_ENGINE_ACCOUNT, 'contract', 'deploy', JSON.stringify(contractPayload)));
+
+      let block = {
+        refHiveBlockNumber: 83680409,
+        refHiveBlockId: 'ABCD1',
+        prevRefHiveBlockId: 'ABCD2',
+        timestamp: '2018-06-01T00:00:00',
+        transactions,
+      };
+
+      await fixture.sendBlock(block);
+
+      const latestBlock = await fixture.database.getLatestBlockInfo();
+
+      const txs = latestBlock.transactions.filter(transaction => transaction.transactionId === crashTx);
+
+      const logs = JSON.parse(txs[0].logs);
+
+      assert.equal(logs.errors[0], "A node.js error occoured during deployment");
 
       resolve();
     })
@@ -1666,9 +1764,9 @@ describe('Smart Contracts', function ()  {
       let logs = JSON.parse(txs[0].logs);
 
       assert.equal(logs.events[0].event, 'random_generated');
-      assert.equal(logs.events[0].data.generatedRandom, 0.8420569525190019);
+      assert.equal(logs.events[0].data.generatedRandom, 0.1167167315351255);
       assert.equal(logs.events[1].event, 'random_generated');
-      assert.equal(logs.events[1].data.generatedRandom, 0.4013183210933376);
+      assert.equal(logs.events[1].data.generatedRandom, 0.36510788325979454);
 
       refBlockNumber = fixture.getNextRefBlockNumber();
       transactions = [];
@@ -1692,9 +1790,9 @@ describe('Smart Contracts', function ()  {
       logs = JSON.parse(txs[0].logs);
 
       assert.equal(logs.events[0].event, 'random_generated');
-      assert.equal(logs.events[0].data.generatedRandom, 0.2249617564549172);
+      assert.equal(logs.events[0].data.generatedRandom, 0.9859509999175694);
       assert.equal(logs.events[1].event, 'random_generated');
-      assert.equal(logs.events[1].data.generatedRandom, 0.6461833723309268);
+      assert.equal(logs.events[1].data.generatedRandom, 0.7988133957484077);
 
       resolve();
     })
