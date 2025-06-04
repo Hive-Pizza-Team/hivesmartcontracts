@@ -131,6 +131,12 @@ async function findDivergentBlock() {
         low = firstBlock.blockNumber;
       }
     }
+    if (!block) {
+      console.log('not caught up or error fetching block');
+      database.close();
+      process.exit(1);
+    }
+
     let high = block._id;
     const headBlock = high;
     while (high - low >= 1) {

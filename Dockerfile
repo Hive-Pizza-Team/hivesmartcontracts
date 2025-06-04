@@ -1,10 +1,10 @@
-FROM node:20-alpine
+FROM node:22.15.1-alpine
 
-RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.6/main' >> /etc/apk/repositories
-RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.6/community' >> /etc/apk/repositories
+RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.9/main' >> /etc/apk/repositories
+RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.9/community' >> /etc/apk/repositories
 
 RUN apk update
-RUN apk add mongodb-tools
+RUN apk add mongodb mongodb-tools
 RUN apk add bash
 
 WORKDIR /hivesmartcontracts
