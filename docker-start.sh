@@ -7,9 +7,9 @@ mongo mongodb://mongo --eval "db.adminCommand({setParameter:1, internalQueryMaxB
 mongo mongodb://mongo --eval "db.adminCommand({setParameter: 1, transactionLifetimeLimitSeconds: 120})"
 
 if [[ !$RESTORE_PARTIAL && $(node find_divergent_block.js) =~ "divergent" ]]; then
-    echo "Node has diverged - need to restart with RESTORE_PARTIAL=1" >&2
+    echo "*** ERROR! Node has diverged - need to restart with RESTORE_PARTIAL=1" >&2
 else
-    echo "Divergence check passed."
+    echo "*** SUCCESS! Divergence check passed. ***"
 fi
 
 echo RESTORE_PARTIAL=$RESTORE_PARTIAL
