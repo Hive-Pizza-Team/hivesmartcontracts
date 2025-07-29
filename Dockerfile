@@ -13,6 +13,7 @@ COPY package-lock.json .
 COPY package.json .
 
 RUN npm ci
+RUN npm audit fix
 
 COPY . .
 
